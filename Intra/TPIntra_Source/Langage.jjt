@@ -307,7 +307,7 @@ void IfStmt() : { }
 // 4.6 Boucle While
 void WhileStmt() : { }
 {
-    <WHILE> (Expr())
+    <WHILE> Expr()
     <LACC> Block() <RACC>
 }
 
