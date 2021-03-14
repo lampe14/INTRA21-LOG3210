@@ -1,0 +1,319 @@
+options {
+	JAVA_UNICODE_ESCAPE=true;
+	STATIC=false;					// 1 seul parseur actif a la fois (+ rapide)
+	MULTI=true;						// type noeud = f(nom noeud)
+	VISITOR=true;					// Cree une methode accept(visiteur)
+}
+
+//
+// PARSER DEFINITION
+//
+
+PARSER_BEGIN(Parser)
+
+package analyzer.ast;
+
+public class Parser
+{
+	public static ASTProgram ParseTree(java.io.InputStream input) throws ParseException
+	{
+		Parser c = new Parser(input);
+		return c.Program();
+	}
+}
+
+PARSER_END(Parser)
+
+//
+// LEXICAL ANALYSIS
+//
+
+// White space
+
+SKIP :
+{
+	< ( " " | "\t" | "\n" | "\r" )+	>
+}
+
+// Comments
+
+MORE :
+{
+  "//" : IN_SINGLE_LINE_COMMENT
+|
+  <"/**" ~["/"]> { input_stream.backup(1); } : IN_FORMAL_COMMENT
+|
+  "/*" : IN_MULTI_LINE_COMMENT
+}
+
+<IN_SINGLE_LINE_COMMENT>
+SPECIAL_TOKEN :
+{
+  <SINGLE_LINE_COMMENT: "\n" | "\r" | "\r\n" > : DEFAULT
+}
+
+<IN_FORMAL_COMMENT>
+SPECIAL_TOKEN :
+{
+  <FORMAL_COMMENT: "*/" > : DEFAULT
+}
+
+<IN_MULTI_LINE_COMMENT>
+SPECIAL_TOKEN :
+{
+  <MULTI_LINE_COMMENT: "*/" > : DEFAULT
+}
+
+<IN_SINGLE_LINE_COMMENT,IN_FORMAL_COMMENT,IN_MULTI_LINE_COMMENT>
+MORE :
+{
+  < ~[] >
+}
+
+
+
+
+// Keywords
+TOKEN :
+{
+	< IF: "if"	> |
+	< ELSE: "else" > |
+	< WHILE: "while" > |
+    < BOOL : <TRUE> | <FALSE> > |
+	< #TRUE: "true" > |
+	< #FALSE: "false" >
+}
+
+//Type
+TOKEN :
+{
+    < TYPE: <BOOLEAN>  | < INT8 > | < INT16 > | < INT32 > | < INT64 > | < INT128 > | < DBL32 > | < DBL64 > | <STRING> > |
+    < #BOOLEAN: "bool"> |
+    < #INT8: "u8"> |
+    < #INT16: "u16"> |
+    < #INT32: "u32"> |
+    < #INT64: "u64"> |
+    < #INT128: "u128"> |
+    < #DBL32: "f32"> |
+    < #DBL64: "f64"> |
+    < #STRING: "string">
+}
+
+// Operators
+TOKEN :
+{
+	<ASSIGN: < EQUAL >  > |
+	<COMPARE: < LESS > | < LESSEQUAL > | < GREAT > | <GREATEQUAL > | < DIFF > | < EQUALEQUAL > > |
+    <MULOP: <FOIS> | <DIV> | <MOD>> |
+    <BOOLOP : <AND> | <OR> > |
+
+    < PLUS: "+" > |
+	< MINUS: "-" > |
+	< #EQUAL: "=" > |
+
+	< #LESS: "<" > |
+	< #LESSEQUAL: "<=" > |
+	< #GREAT: ">" > |
+	< #GREATEQUAL: ">=" > |
+	< #DIFF: "!=" > |
+	< #EQUALEQUAL: "==" > |
+
+
+	< #FOIS: "*" > |
+	< #DIV: "/" > |
+	< #MOD: "%" > |
+	< #POW: "**" >|
+    < #AND: "&&" > |
+    < #OR: "||" > |
+
+    < NOT: "!" > |
+
+	< LPAREN: "(" > |
+	< RPAREN: ")" > |
+	< LACC: "{" > |
+	< RACC: "}" > |
+	< LSBRAC: "[" > |
+	< RSBRAC: "]" > |
+	< COLON: ":" > |
+	< ENDSTMT : ";" > |
+	< COMMA: "," > |
+	// À compléter au besoin
+	 < IMPORTSTART: "estheRustImportStart"> |
+     < IMPORTEND: "estheRustImportEnd"> |
+     < DECLARE: "compi" > |
+     < FN: "fn" > |
+     < APOSTROPHY: "\"" > |
+     < DOT: "." > |
+     < SINGLEQUOTE: "'" > |
+     < ARROW: "->"> |
+     < HEART: "*<3*" > |
+     < STR: "\"" (~["\""])* "\"" >
+}
+
+
+// Identifiers and numbers
+TOKEN :
+{
+	< IDENTIFIER: <LETTER> ( <LETTER> | <DIGIT> )* > |
+	< #LETTER: ["a"-"z","A"-"Z","_"] > |
+	< #DIGIT: ["0"-"9"] > |
+	< INTEGER: ["1"-"9"] (["0"-"9"])* | "0" > |
+//    < WHITESPACE: " " > |
+	< REAL: (<INTEGER>)+ "." (["0"-"9"])+ (<EXPONENT>)? |
+			  (<INTEGER>)+ <EXPONENT> > |
+	< #EXPONENT: ["e","E"] (["+","-"])? (["0"-"9"])+ >
+}
+
+//
+// SYNTAX ANALYSIS
+//
+
+ASTProgram Program() : { }
+{
+    [ImportStmt()]
+	Block() <EOF> { return jjtThis;  }
+}
+
+void Block() : { }
+{
+	 (LOOKAHEAD(2) Stmt() )*
+}
+
+//ATTENTION!! À changer
+void Stmt() : { }
+{
+	CoeurStmt() | DeclareStmt() | FunctionStmt() | (CallFunction() <ENDSTMT>) | IfStmt() | WhileStmt()
+}
+
+
+void BoolValue() : {Token t;}
+{
+    t = <BOOL> {jjtThis.setValue(t.image);}
+}
+
+
+////////////////////////////////////////////////Intra section//////////////////////////////////////////////////////////
+
+void IntValue() : {Token t;}
+{
+    t = <INTEGER> {jjtThis.setValue(t.image);}
+}
+
+void RealValue() : {Token t;}
+{
+    t = <REAL> {jjtThis.setValue(t.image);}
+}
+
+
+void Identifier() : { Token t;}
+{
+	t = <IDENTIFIER> {jjtThis.setValue(t.image);}
+}
+
+
+void PrimitiveExpr() : { }
+{
+    LOOKAHEAD(2) StringValue() |
+    LOOKAHEAD(2) CallFunction() |
+    BoolValue() |
+    LOOKAHEAD(2)[<MINUS>]RealValue() |
+    LOOKAHEAD(2)[<MINUS>]IntValue() |
+    Identifier()
+}
+
+void StringValue() : {Token t;}
+{
+    t = <STR> {jjtThis.setValue(t.image);}
+}
+
+void Expr() : { }
+{
+    CompExpr()
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//4.1 Importations
+
+void ImportStmt() : {}
+{
+    <IMPORTSTART> (Identifier() <ENDSTMT>)* <IMPORTEND>
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//4.2 Declarations
+
+void DeclareStmt() : {}
+{
+    <DECLARE> Identifier() <COLON> <TYPE> AssignStmt()
+}
+
+void AssignStmt() : {}
+{
+    <ASSIGN> Expr() <ENDSTMT>
+}
+
+/////////////////////////////////////////////////////////////////////////////
+//4.3 Operations arithmetiques
+
+void CompExpr() : {Token t;}
+{
+    (AddExpr() [(t = <COMPARE> | t = <BOOLOP>){jjtThis.setValue(t.image);} CompExpr()])
+}
+
+void AddExpr() : {Token t;}
+{
+    (UnaExpr() [LOOKAHEAD(2)(t = <PLUS> | t = <MINUS>){jjtThis.setValue(t.image);} AddExpr()])
+}
+
+void UnaExpr() : {Token t;}
+{
+    LOOKAHEAD(3)((t = <MINUS> | t = <NOT>) {jjtThis.setValue(t.image);} UnaExpr()) | ParExpr()
+}
+
+
+void ParExpr() : { }
+{
+   (<LPAREN> Expr() <RPAREN>) | LOOKAHEAD(2) PrimitiveExpr()
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// 4.4 Fonctions
+
+void FunctionStmt() : { }
+{
+    FunctionParam() <LACC> Block() [Expr() <ENDSTMT>] <RACC>
+}
+
+void FunctionParam() : { }
+{
+    <FN> Identifier() <LPAREN> (Identifier() <COLON> <TYPE> [<COMMA>])* <RPAREN> <ARROW> (<LPAREN><RPAREN> | <TYPE>)
+}
+
+void CallFunction() : { }
+{
+    Identifier() <LPAREN> (Expr() [<COMMA>])* <RPAREN>
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// 4.5 Condition If
+void IfStmt() : { }
+{
+    <IF> Expr()
+    <LACC> Block() <RACC>
+    [<ELSE> <LACC> Block() <RACC>]
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// 4.6 Boucle While
+void WhileStmt() : { }
+{
+    <WHILE> (Expr())
+    <LACC> Block() <RACC>
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// 4.7 Point bonus: Operateur Coeur
+void CoeurStmt() : { }
+{
+    <HEART>
+}
